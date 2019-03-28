@@ -31,9 +31,9 @@ tcdat %>% head
 ```
 
 
-Throughput peaks in the middle of the day - but only on weekdays
+#Throughput peaks in the middle of the day - but only on weekdays
 ```{r}
-#labels = date_format("%a-%d\n%H:%M"
+
 ggplot(tcdat, aes(x = begin_time, y = throughput)) + 
   geom_line(size =0.1) +
   scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a \n %d",tz=Sys.timezone()))+
@@ -82,4 +82,35 @@ ggplot(tcdat.fit.plot, aes(x = throughput, y = average_response_time)) +
 ggplot(tcdat.fit.plot %>% filter(average_response_time<1000), aes(x = average_response_time, y = throughput)) + 
   geom_point(size =0.5) +
   theme_bw()
+```
+
+# Decompose Timeseries into a weekly period, a daily period, trend and random noise
+```{r}
+tcdat.ts <- forecast::msts(tcdat$throughput,seasonal.periods = c(24*60,24*60*7-1))
+tcdat.ts %>% mstl(.) ->tcdat.mstl
+tcdat.mstl %>% autoplot() + xlab("Week")
+```
+
+#Forecast time series using STL decomposition and ARIMA for trend and noise component
+```{r}
+# STL: local regression for decomposition of cyclic components
+# non seasonal arima model for trend and noise component
+# 2 autoregressive terms (p)
+# 1 difference needed for stationarity (d)
+# 1 lagged forecast errors terms (q)
+
+#create model that describes  4 weeks of data
+tcdat.ts %>%stlf(method='arima',level=c(80,95),h =24*60*7*4) ->ts.model
+#use model to forecast out 4  weeks
+the.forecast<-forecast(ts.model,robust=TRUE)
+plot(the.forecast)
+```
+
+```{r}
+checkresiduals(ts.model)
+```
+
+
+```{r}
+
 ```
