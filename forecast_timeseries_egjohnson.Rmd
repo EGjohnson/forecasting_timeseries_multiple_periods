@@ -111,7 +111,7 @@ checkresiduals(ts.model)
 ```
 
 
-
+# create forecast dataframe 
 ```{r}
 tcdat %>% mutate(begin_time2=begin_time+minutes(1)) %>%
 filter(max(begin_time2)==begin_time2) %>% select(begin_time2) %>%
@@ -119,10 +119,30 @@ filter(max(begin_time2)==begin_time2) %>% select(begin_time2) %>%
 
 forecast.date<-seq(from=ymd_hms(start.new.time.vec)+min(1),length.out=the.forecast$mean %>% length,by="1 min")
 the.forecast %>% data.frame() %>% cbind(forecast.date) -> the.forecast
+the.forecast %>% head
+```
+
+
+# adjust for end of daylight savings time (app usage should be shifted)
+```{r}
+# Sunday, November 5, 2017, 2:00:00 am clocks were turned backward 1 hour to 1:00am (US Canada)
+# UTC does not change with a change of seasons 
+# but usage pattern of app will shift according to local time change
+
+# for example: post time change, the 8am UTC usage will look like previous 7am UTC usage during daylight savings time
+# during daylight savings people were getting to work an hour earlier in UTC time
+
+# ID daylight savings observations and adjust throughput predictions (fall back)
+the.forecast %<>% mutate(dst=case_when(forecast.date<ymd_hms("2017-11-05 01:00:00")~"yes",TRUE ~ "no"))
+the.forecast %>% filter(dst=="no") %>% mutate(forecast.date=ymd_hms(forecast.date,tz = "UTC")+60*60)->the.forecast.dst.shift
+the.forecast.adj<-rbind(the.forecast %>% filter(dst=="yes"),the.forecast.dst.shift)
+
 ```
 
 ```{r}
-new.time.seq %>% head
+p1 %>% hello
+p1 <- ggplot(the.forecast.adj %>% filter(weekdays.POSIXt()), aes(forecast.date,Point.Forecast))+
+    geom_line()+geom_ribbon(data=the.forecast.adj,aes(ymin=Lo.80,ymax=Hi.80),alpha=0.3)+
+  scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a \n %d",tz=Sys.timezone()))+
+  theme_bw()
 ```
-
-
