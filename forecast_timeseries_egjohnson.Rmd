@@ -4,3 +4,24 @@ author: "Elizabeth"
 date: "March 27, 2019"
 ---
 
+```{r setup, include=FALSE}
+.x <- c("data.table", "readr","printr","scales","magrittr","pipeR","lubridate","ggplot2",
+        "knitr","anytime","tidyr","dplyr","TTR","forecast")
+lapply(.x, library, character.only = T)
+setwd("~/PetGit/forecast_timeseries_multiple_periods/")
+```
+
+```{r}
+tcdat <- fread("app_data.csv",colClasses=c("character"))
+tcdat %>% head
+```
+
+
+```{r}
+#change UNIX timestamp to actual date
+#seconds since Jan 01 1970. (UTC)
+library(tidyr)
+tcdat %>% dplyr::mutate(begin_time=anytime(as.integer(begin_time))) %>% dplyr::mutate_if(is.character,as.numeric) -> tcdat
+                                                                
+tcdat %>% head
+```
