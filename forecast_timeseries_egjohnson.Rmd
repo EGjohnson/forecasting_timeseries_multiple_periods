@@ -111,6 +111,18 @@ checkresiduals(ts.model)
 ```
 
 
-```{r}
 
+```{r}
+tcdat %>% mutate(begin_time2=begin_time+minutes(1)) %>%
+filter(max(begin_time2)==begin_time2) %>% select(begin_time2) %>%
+.$begin_time %>% as.character()->start.new.time.vec
+
+forecast.date<-seq(from=ymd_hms(start.new.time.vec)+min(1),length.out=the.forecast$mean %>% length,by="1 min")
+the.forecast %>% data.frame() %>% cbind(forecast.date) -> the.forecast
 ```
+
+```{r}
+new.time.seq %>% head
+```
+
+
