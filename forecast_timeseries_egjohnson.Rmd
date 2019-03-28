@@ -2,9 +2,11 @@
 title: "forecast_timeseries_egjohnson"
 author: "Elizabeth"
 date: "March 27, 2019"
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
+# import data processing and forecasting libraries
 .x <- c("data.table", "readr","printr","scales","magrittr","pipeR","lubridate","ggplot2",
         "knitr","anytime","tidyr","dplyr","TTR","forecast")
 lapply(.x, library, character.only = T)
@@ -12,6 +14,7 @@ setwd("~/PetGit/forecast_timeseries_multiple_periods/")
 ```
 
 ```{r}
+# read in data as character
 tcdat <- fread("app_data.csv",colClasses=c("character"))
 tcdat %>% head
 ```
@@ -20,8 +23,41 @@ tcdat %>% head
 ```{r}
 #change UNIX timestamp to actual date
 #seconds since Jan 01 1970. (UTC)
+#convert characters to numeric
 library(tidyr)
 tcdat %>% dplyr::mutate(begin_time=anytime(as.integer(begin_time))) %>% dplyr::mutate_if(is.character,as.numeric) -> tcdat
                                                                 
 tcdat %>% head
+```
+
+
+Throughput peaks in the middle of the day - but only on weekdays
+```{r}
+#labels = date_format("%a-%d\n%H:%M"
+ggplot(tcdat, aes(x = begin_time, y = throughput)) + 
+  geom_line(size =0.1) +
+  scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a \n %d",tz=Sys.timezone()))+
+  theme_bw()
+```
+
+
+#On a weekday throughput typically peaks prior to noon then tapers off.
+```{r}
+tcdat %>% dplyr::filter(day(begin_time) ==26)->tc.plot
+
+ggplot(tc.plot, aes(x = begin_time, y = throughput)) + 
+  geom_line(size =0.1) +
+  scale_x_datetime(breaks = date_breaks("1 hour"),labels=time_format("%a \n %d \n %H",tz=Sys.timezone()))+
+  theme_bw()
+```
+
+
+# response time spikes on some weekdays with random random slowdowns
+```{r}
+ggplot(tcdat, aes(x = begin_time, y = average_response_time)) + 
+  geom_line(size = 1) +
+  scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a-%d",tz=Sys.timezone()))+
+  theme_bw()
+```
+
 ```
