@@ -86,7 +86,7 @@ tcdat %<>% mutate(log.response=log10(average_response_time),log.through=log10(th
 #create subset of data that has response time effect
 tcdat.res<-tcdat %>% filter(log.response>2.5)
 # estimate impact response has on throughput
-res.impact.throughput.mod <-lm(log.through~ log.response,data=tcdat.res)
+res.impact.throughput.mod <-lm(log.through ~ log.response,data=tcdat.res)
 #plot model of responses impact on throughput
 tcdat.res$predict.throughput<-predict(res.impact.throughput.mod,log.response=tcdat.res$log.response,data=tcdat.res)
 ggplot(tcdat.res, aes(y=log.through, x =log.response)) + geom_point()+
@@ -104,13 +104,17 @@ ggplot(tcdat.res, aes(y=log.through, x =log.response)) + geom_point()+
 # (the more traffic the slower the response time)
 tcdat.thr<-tcdat %>% filter(log.response<2.5 & log.through > 4.95)
 # estimate impact response has on throughput
-response.throughput.mod <-lm(log.response~ log.through,data=tcdat.thr)
+response.throughput.mod <-lm(log.response ~ log.through,data=tcdat.thr)
 #plot model of responses impact on throughput
 tcdat.thr$predict.response<-predict(response.throughput.mod,log.through=tcdat.thr$log.through,data=tcdat.thr)
+response.resid<-tcdat.thr$average_response_time - 10^(predict(response.throughput.mod)) #calculate residuals nonlogged model
+
 ggplot(tcdat.thr, aes(x=log.through, y =log.response)) + geom_point()+
   geom_point(size =0.5) +
   geom_line(color='red',aes(y=tcdat.thr$predict.response,x=tcdat.thr$log.through))+
   theme_bw() 
+
+
 ```
 
 
@@ -166,13 +170,13 @@ tcdat %>% mutate(begin_time2=begin_time+minutes(1)) %>%
 filter(max(begin_time2)==begin_time2) %>% select(begin_time2) %>%
 .$begin_time %>% as.character()->start.new.time.vec
 
-forecast.date<-seq(from=ymd_hms(start.new.time.vec)+min(1),length.out=the.forecast$mean %>% length,by="1 min")
+forecast.date<-seq(from=ymd_hms(start.new.time.vec),length.out=the.forecast$mean %>% length,by="1 min")
 the.forecast %>% data.frame() %>% cbind(forecast.date) -> the.forecast
-the.forecast %>% head
+
 ```
 
 
-# 6. Adjust for user behavior 
+# 6. Adjust for changes in user behavior (Daylight Savings Time)
 
 
 ###  adjust for end of daylight savings time (app usage should be shifted)
@@ -190,7 +194,7 @@ the.forecast %<>% mutate(dst=case_when(forecast.date<ymd_hms("2017-11-05 01:00:0
 the.forecast %>% filter(dst=="no" & month(forecast.date)==11 & day(forecast.date)==5 & hour(forecast.date)==1) -> fall.back.hr
 the.forecast %>% filter(dst=="no") %>% mutate(forecast.date=ymd_hms(forecast.date,tz = "UTC")+60*60)->the.forecast.dst.shift
 the.forecast.adj<-rbind(the.forecast %>% filter(dst=="yes"),fall.back.hr,the.forecast.dst.shift)
-
+the.forecast.adj %>% arrange(forecast.date) %>% head
 ```
 
 
@@ -209,7 +213,7 @@ p1 <- ggplot(the.forecast.adj.plot, aes(forecast.date,Point.Forecast))+
 p1
 ```
 
-# 7. Add back in randomized structured noise 
+# 7.Construct A probable average_response_time timecourse for the projection
 
 
 ### account for process 2 (throughput slowing down response time)
@@ -218,39 +222,79 @@ p1
 #use forecasted throughput timeline to forecast response time with fitted function describing process 1 and bootstrapped residuals
 the.forecast.adj$resp_p2_component_log<-predict(response.throughput.mod,data.frame(log.through=log10(the.forecast.adj$Point.Forecast)))
 
-the.forecast.adj %>% mutate(resp_p2_component=10^resp_p2_component_log) %>% select(-resp_p2_component_log) %>%
-mutate(resp_p2_component=resp_p2_component+4*sample(10^(response.throughput.mod$residuals),size=length(the.forecast.adj$resp_p2_component),replace=TRUE))->the.forecast.adj
+the.forecast.adj %>% 
+  mutate(resp_p2_component=10^resp_p2_component_log) %>% 
+  select(-resp_p2_component_log) %>%
+  mutate(resp_p2_component=resp_p2_component+sample(response.resid,size=length(resp_p2_component),replace=T))->the.forecast.adj
 ```
 
 
-### account for process 1 (randomize response times while keeping the day specific structure)
+### response time timecourse: account for process 1 (response time decreasing throughput) 
 
 ```{r}
-set.seed(60)
-# add back in process 1 outlier spikes 
 
-# 1.randomize response spike events locally to days (phenomena day/range specific)
+#randomize response times while keeping the day specific structure to create probable trajectory
+set.seed(121)
 
-#function to reshuffle spike distribution in a weekday specific manner
+# function to randomize events while preserving day/week structure
 reshuffle.spikes<-function(shift.sec){tcdat %>% filter(log.response>2.5) %>% mutate(wkd=weekdays(begin_time)) %>% group_by(wkd) %>% 
   mutate(average_response_time=sample(average_response_time,size=length(average_response_time),replace=T)) %>% 
-    mutate(begin_time=begin_time+shift.sec)}
+    mutate(begin_time=begin_time+shift.sec) %>% ungroup}
 
-#events randomized
+
+
+# create 4 week forecast of probable events
 response.spikes.randomized<-rbind(reshuffle.spikes(60*60*24*7*2),reshuffle.spikes(60*60*24*7*4)) %>% select(begin_time,average_response_time) %>% rename(average_response_time_spike=average_response_time,forecast.date=begin_time)
 
-# 2. merge strucutured random spike "events" into forecasted data frame 
-merge(response.spikes.randomized,the.forecast.adj,by="forecast.date",all=T) %>% arrange(forecast.date) -> the.forecast.adj
 
-# 3. combine both process 1 and 2 to get simulated response timecourse
+
+
+# 2. merge strucutured events into the full forecasted data frame 
+merge(response.spikes.randomized %>% mutate(forecast.date=as.character(forecast.date)),the.forecast.adj %>% mutate(forecast.date=as.character(forecast.date)),by="forecast.date",all=T) %>% arrange(forecast.date) %>% 
+mutate(forecast.date=ymd_hms(forecast.date)) -> the.forecast.adj
+
+
+```
+
+
+
+### combine both process 1 and 2 to get simulated timecourse for response time
+```{r}
 the.forecast.adj %<>% 
-  mutate(Point.Forecast.resptime=case_when(is.na(average_response_time_spike) ~ resp_p2_component,TRUE ~ average_response_time_spike))
+  mutate(Point.Forecast.resptime=case_when(is.na(average_response_time_spike) ~ resp_p2_component, TRUE ~ average_response_time_spike))
 ```
 
 ```{r}
-ggplot(the.forecast.adj,aes(forecast.date,resp_p2_component))+geom_line()
+ggplot(the.forecast.adj,aes(forecast.date,Point.Forecast.resptime))+geom_line()+
+  scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a-%d",tz=Sys.timezone()))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# 8. Account for the impact of the simulated response time slowdown events in the forecasted projection of throughput:
+
+```{r}
+# write function to predict throughput drops from response time spikes 
+predict.throuput<-function(spike.dat){
+  log10.through<-coefficients(res.impact.throughput.mod)[2]*log10(spike.dat)+coefficients(res.impact.throughput.mod)[1]
+  10^log10.through}
+
+# predict throughput drops
+the.forecast.adj$throughput.impact<-predict.throuput(the.forecast.adj$average_response_time_spike)
+# account for impact of resposne slowdowns events on throughputs
+the.forecast.adj %>% mutate(Point.Forecast=case_when(is.na(throughput.impact) ~ Point.Forecast, TRUE ~ throughput.impact)) -> the.forecast.adj
+```
+
+```{r}
 
 ```
 
+```{r}
+ggplot(the.forecast.adj,aes(forecast.date,throughput.impact))+geom_line(size =0.1) +
+  scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a-%d",tz=Sys.timezone()))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
 
 
