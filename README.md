@@ -37,7 +37,7 @@ the script will execute the following steps:
 * 6. Adjust for changes in user behavior (Daylight Savings Time)
 * 7. Construct A probable average_response_time timecourse for the projection
 * 8. Account for the impact of the simulated response time slowdown events in the forecasted projection of throughput
-* 9  create 4 week forecasted data frame in same format as original
+* 9.  create 4 week forecasted data frame in same format as original
 
 
 
