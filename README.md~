@@ -1,8 +1,8 @@
 # forecasting_timeseries_multiple_periods
 
-## How to run the script
+## How to run
 
-The script is composed in the R language and is written into a Rmarkdown file that is best run in Rstudio.
+The script is composed in the R language and is writtein into a Rmarkdown file that is best run in Rstudio.
 The environment setting as of last execution was as follows:
 
 platform       x86_64-pc-linux-gnu
@@ -21,11 +21,6 @@ version.string R version 3.4.3 (2017-11-30)
 nickname       Kite-Eating Tree
 
 ## What the script does
-
-app_data.csv -> forecast_timeseries_egjohnson.Rmd -> forecast_data_app_4wks_johnson.csv 
-
-the html file and pdf file are outputs from the markdown notebook that are easy to read without Rstudio.
-the html file is best opened with chrome.
 
 the script will execute the following steps:
 
