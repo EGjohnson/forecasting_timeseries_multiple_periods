@@ -1,7 +1,7 @@
 ---
 title: "forecast_timeseries_egjohnson"
 author: "Elizabeth"
-date: "March 27, 2019"
+date: "March 28, 2019"
 output: pdf_document
 ---
 
@@ -16,8 +16,8 @@ setwd("~/PetGit/forecast_timeseries_multiple_periods/")
 
 ```{r}
 # read in data as character
-tcdat <- fread("app_data.csv",colClasses=c("character"))
-tcdat %>% head
+tcdat.raw <- fread("app_data.csv",colClasses=c("character"))
+tcdat.raw %>% tail
 ```
 
 
@@ -26,7 +26,7 @@ tcdat %>% head
 #seconds since Jan 01 1970. (UTC)
 #convert characters to numeric
 library(tidyr)
-tcdat %>% dplyr::mutate(begin_time=anytime(as.integer(begin_time))) %>% dplyr::mutate_if(is.character,as.numeric) -> tcdat
+tcdat.raw %>% dplyr::mutate(begin_time=anytime(as.integer(begin_time))) %>% dplyr::mutate_if(is.character,as.numeric) -> tcdat
                                                                 
 tcdat %>% head
 ```
@@ -61,7 +61,7 @@ ggplot(tc.plot, aes(x = begin_time, y = throughput)) +
 
 ```{r}
 ggplot(tcdat, aes(x = begin_time, y = average_response_time)) + 
-  geom_line(size = 1) +
+  geom_line(size =0.1) +
   scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a-%d",tz=Sys.timezone()))+
   theme_bw()
 ```
@@ -169,8 +169,8 @@ checkresiduals(ts.model)
 tcdat %>% mutate(begin_time2=begin_time+minutes(1)) %>%
 filter(max(begin_time2)==begin_time2) %>% select(begin_time2) %>%
 .$begin_time %>% as.character()->start.new.time.vec
-
-forecast.date<-seq(from=ymd_hms(start.new.time.vec),length.out=dim(the.forecast %>% data.frame)[1] %>% length,by="1 min")
+the.forecast <-data.frame(the.forecast)
+forecast.date<-seq(from=ymd_hms(start.new.time.vec),length.out=dim(the.forecast)[1],by="1 min")
 the.forecast %>% data.frame() %>% cbind(forecast.date) -> the.forecast
 
 ```
@@ -232,22 +232,27 @@ the.forecast.adj %>%
 ### response time timecourse: account for process 1 (response time decreasing throughput) 
 
 ```{r}
-
 #randomize response times while keeping the day specific structure to create probable trajectory
-set.seed(121)
+set.seed(181) #121
 
-# function to randomize events while preserving day/week structure
-reshuffle.spikes<-function(shift.sec){tcdat %>% filter(log.response>2.5) %>% mutate(wkd=weekdays(begin_time)) %>% group_by(wkd) %>% 
+# function to randomize slowdown events while preserving day/week structure
+reshuffle.spikes<-function(shift.sec,type,the.seed){set.seed(the.seed)
+  #pull of only large spikes in log response for the first week and second week 
+  the.week<-switch(type,week1=tcdat %>% filter(log.response>2.5 & day(begin_time) <21),
+        week2=tcdat %>% filter(log.response> 2.5 & day(begin_time) > 21))
+  #split off a week into days and resample the large response times on each day 
+  wk.shift<-switch(type,1,0)
+  the.week %>% mutate(wkd=weekdays(begin_time)) %>% group_by(wkd) %>% 
   mutate(average_response_time=sample(average_response_time,size=length(average_response_time),replace=T)) %>% 
-    mutate(begin_time=begin_time+shift.sec) %>% ungroup}
+  mutate(begin_time=begin_time+shift.sec+60*60*24*7*(wk.shift))%>% ungroup}
 
-
-
+week.no<-sample(c(2,2,1,1),4,replace=T)
+seed.no<-sample(c(1:50),4)
 # create 4 week forecast of probable events
-response.spikes.randomized<-rbind(reshuffle.spikes(60*60*24*7*2),reshuffle.spikes(60*60*24*7*4)) %>% select(begin_time,average_response_time) %>% rename(average_response_time_spike=average_response_time,forecast.date=begin_time)
-
-
-
+response.spikes.randomized<-rbind(reshuffle.spikes(60*60*24*7*1,week.no[1],seed.no[1]),
+                                  reshuffle.spikes(60*60*24*7*2,week.no[2],seed.no[2]),
+                                  reshuffle.spikes(60*60*24*7*3,week.no[3],seed.no[3]),
+                                  reshuffle.spikes(60*60*24*7*4,week.no[4],seed.no[4])) %>% select(begin_time,average_response_time) %>% rename(average_response_time_spike=average_response_time,forecast.date=begin_time)
 
 # 2. merge strucutured events into the full forecasted data frame 
 merge(response.spikes.randomized %>% mutate(forecast.date=as.character(forecast.date)),the.forecast.adj %>% mutate(forecast.date=as.character(forecast.date)),by="forecast.date",all=T) %>% arrange(forecast.date) %>% 
@@ -265,7 +270,7 @@ the.forecast.adj %<>%
 ```
 
 ```{r}
-ggplot(the.forecast.adj,aes(forecast.date,Point.Forecast.resptime))+geom_line()+
+ggplot(the.forecast.adj,aes(forecast.date,Point.Forecast.resptime))+geom_line(size=0.1)+
   scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a-%d",tz=Sys.timezone()))+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -290,7 +295,7 @@ the.forecast.adj %>% mutate(Point.Forecast=case_when(is.na(throughput.impact) ~ 
 ```
 
 ```{r}
-ggplot(the.forecast.adj,aes(forecast.date,Point.Forecast))+geom_line(size =0.1) +
+ggplot(the.forecast.adj,aes(forecast.date,Point.Forecast))+geom_line(size =0.09) +
   scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a-%d",tz=Sys.timezone()))+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -298,7 +303,35 @@ ggplot(the.forecast.adj,aes(forecast.date,Point.Forecast))+geom_line(size =0.1) 
 ```
 # 9 create 4 week forecasted data frame in same format as original
 ```{r}
-the.forecast.adj %>% mutate(begin_time=as.numeric(forecast.date)) %>% select(begin_time,Point.Forecast.resptime,Point.Forecast) %>% 
-  rename(average_response_time=Point.Forecast.resptime,throughput=Point.Forecast) %>% 
-  head
+dim(the.forecast.adj)[1]-> num.minutes.in.forecast
+tcdat.raw %>% tail %>% arrange(desc(begin_time)) %>% .[1,1] %>% as.integer -> last.unix.timestamp
+the.seq=seq(from=last.unix.timestamp+60,length.out=num.minutes.in.forecast,by=60)
+the.forecast.adj %>% mutate(begin_time=the.seq)%>% select(begin_time,Point.Forecast.resptime,Point.Forecast) %>% 
+  rename(average_response_time=Point.Forecast.resptime,throughput=Point.Forecast) -> forecast.dat.final
+```
+
+```{r}
+#check that forecast outputs make sense
+library(broom)
+dim(forecast.dat.final)[1]-> num.minutes.in.forecast
+print(paste0("number of days ",floor(num.minutes.in.forecast/(60*24))))
+
+```
+
+```{r}
+r.dat<-rbind(tcdat$average_response_time %>% summary %>% broom::tidy(.),forecast.dat.final$average_response_time %>% summary %>% broom::tidy(.)) %>% 
+  data.frame %>% cbind(data=c("raw","forecast"),.) %>% cbind(variable=c("average_response_time"),.)
+
+t.dat<-rbind(tcdat$throughput %>% summary %>% broom::tidy(.),forecast.dat.final$throughput %>% summary %>% broom::tidy(.)) %>% 
+  data.frame %>% cbind(data=c("raw","forecast"),.) %>% cbind(variable=c("throughput"),.)
+
+rbind(r.dat,t.dat)
+```
+
+
+
+```{r}
+#write data
+forecast.dat.final %>% write.csv(.,"forecast_data_app_4wks_johnson.csv")
+  
 ```
