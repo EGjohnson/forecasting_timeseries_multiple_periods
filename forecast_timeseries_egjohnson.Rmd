@@ -170,7 +170,7 @@ tcdat %>% mutate(begin_time2=begin_time+minutes(1)) %>%
 filter(max(begin_time2)==begin_time2) %>% select(begin_time2) %>%
 .$begin_time %>% as.character()->start.new.time.vec
 
-forecast.date<-seq(from=ymd_hms(start.new.time.vec),length.out=the.forecast$mean %>% length,by="1 min")
+forecast.date<-seq(from=ymd_hms(start.new.time.vec),length.out=dim(the.forecast %>% data.frame)[1] %>% length,by="1 min")
 the.forecast %>% data.frame() %>% cbind(forecast.date) -> the.forecast
 
 ```
@@ -290,11 +290,15 @@ the.forecast.adj %>% mutate(Point.Forecast=case_when(is.na(throughput.impact) ~ 
 ```
 
 ```{r}
-ggplot(the.forecast.adj,aes(forecast.date,throughput.impact))+geom_line(size =0.1) +
+ggplot(the.forecast.adj,aes(forecast.date,Point.Forecast))+geom_line(size =0.1) +
   scale_x_datetime(breaks = date_breaks("1 day"), labels=date_format("%a-%d",tz=Sys.timezone()))+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
-
-
+# 9 create 4 week forecasted data frame in same format as original
+```{r}
+the.forecast.adj %>% mutate(begin_time=as.numeric(forecast.date)) %>% select(begin_time,Point.Forecast.resptime,Point.Forecast) %>% 
+  rename(average_response_time=Point.Forecast.resptime,throughput=Point.Forecast) %>% 
+  head
+```
